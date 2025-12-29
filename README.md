@@ -7,6 +7,8 @@ The goal is to answer two main questions:
 1. **What are the most significant risk factors associated with heart failure mortality?**
 2. **Can we accurately predict patient survival using clinical features?**
 
+Created by Giulio Matteucci in 2025 as biomedical data science portfolio project.
+
 ## Dataset
 The dataset used is the **Heart Failure Clinical Records Dataset**.
 - **Source**: Kaggle (originally from UCI Machine Learning Repository).
@@ -19,8 +21,6 @@ The dataset used is the **Heart Failure Clinical Records Dataset**.
   - `serum_sodium`: Level of serum sodium in the blood
   - `time`: Follow-up period (days)
   - Comorbidities: `anaemia`, `diabetes`, `high_blood_pressure`, `smoking`
- 
-Created by Giulio Matteucci in 2025 as biomedical data science portfolio project.
 
 ## Methodology
 
