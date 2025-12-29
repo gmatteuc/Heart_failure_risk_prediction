@@ -47,6 +47,7 @@ import seaborn as sns
 from scipy.stats import mannwhitneyu, chi2_contingency
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, roc_curve
 import xgboost as xgb
@@ -397,13 +398,17 @@ def compute_grouped_kaplan_meier(df, group_col, time_col='time', event_col='DEAT
         median_time = stats['median_time']
             
         # 2. Survival at target day
-        # Use interpolation
+        # Use step-function lookup (exact KM) instead of interpolation
         surv_prob = km['survivals']
         times = km['times']
-        if target_day <= times[-1]:
-            surv_at_target = np.interp(target_day, times, surv_prob)
-        else:
-            surv_at_target = surv_prob[-1]
+        
+        # Find index where times <= target_day
+        # searchsorted(side='right') gives index i such that times[i-1] <= target_day < times[i]
+        idx = np.searchsorted(times, target_day, side='right') - 1
+        
+        # Clip index to be safe (though 0 is always time=0, surv=1)
+        idx = max(0, min(idx, len(surv_prob) - 1))
+        surv_at_target = surv_prob[idx]
             
         results['groups'].append({
             'label': label,
@@ -454,8 +459,13 @@ def compute_death_rate(df, n_days, time_col='time', event_col='DEATH_EVENT'):
     
     if len(filtered_df) == 0:
         return 0.0
+    
+    # Numerator: People who died within n_days
+    # Denominator: People with known status at n_days (died <= n_days OR survived >= n_days)
+    n_died_within = died_within[valid].sum()
+    n_total = len(filtered_df)
         
-    return (filtered_df[event_col] == 1).mean()
+    return n_died_within / n_total
 
 # =============================================================================
 # Survival Analysis (Visualization)
@@ -484,10 +494,21 @@ def compute_km_statistics(km_data):
     
     # Stats
     plateau_height = y_orig.max()
-    prob_1_year = np.interp(365, x_smooth, y_smooth) if x_smooth.max() >= 365 else None
-    prob_30_days = np.interp(30, x_smooth, y_smooth) if x_smooth.max() >= 30 else None
+    
+    # Helper for step function lookup
+    def get_prob_at_t(t, times, probs):
+        if t > times.max():
+            return probs[-1] # Assume constant after last event
+        idx = np.searchsorted(times, t, side='right') - 1
+        idx = max(0, min(idx, len(probs) - 1))
+        return probs[idx]
+
+    # Calculate exact probabilities from step function (y_orig = 1 - survival)
+    prob_1_year = get_prob_at_t(365, x_orig, y_orig)
+    prob_30_days = get_prob_at_t(30, x_orig, y_orig)
     
     # Median (time where cumulative death >= 50% of plateau)
+    # We keep using smoothed curve for finding the intersection time to avoid discrete jumps
     target_val = plateau_height * 0.5
     indices = np.where(y_smooth >= target_val)[0]
     
@@ -693,7 +714,7 @@ def plot_time_to_event_distribution(stats, palette=None, save_path=None):
     sns.histplot(times, kde=True, color=color, alpha=0.5, bins=20, label='Observed events')
     
     plt.axvline(mean_val, color='black', linestyle='--', label=f"Mean: {mean_val:.1f}")
-    plt.axvline(median_val, color='orange', linestyle='-.', label=f"Median: {median_val:.0f}")
+    plt.axvline(median_val, color='red', linestyle='-.', label=f"Median: {median_val:.0f}")
     
     plt.title(f"Distribution of Time to Event (n={len(times)})")
     plt.xlabel("Time (days)")
@@ -797,10 +818,6 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
 
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
     # Calculate class imbalance for XGBoost
     # scale_pos_weight = count(negative) / count(positive)
     n_pos = y_train.sum()
@@ -808,8 +825,12 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
     scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
 
     # Models
+    # Use Pipeline for LR to avoid data leakage during CV (scaling inside folds)
     models = {
-        'Logistic Regression': LogisticRegression(class_weight='balanced', random_state=random_state),
+        'Logistic Regression': make_pipeline(
+            StandardScaler(), 
+            LogisticRegression(class_weight='balanced', random_state=random_state)
+        ),
         'XGBoost': xgb.XGBClassifier(scale_pos_weight=scale_pos_weight, eval_metric='logloss', random_state=random_state)
     }
     
@@ -819,22 +840,21 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
     
     cv_results = []
     for name, model in models.items():
-        # Use scaled for both for simplicity in CV loop
         for m_name, scoring in metrics.items():
-            scores = cross_val_score(model, X_train_scaled, y_train, cv=cv, scoring=scoring)
+            scores = cross_val_score(model, X_train, y_train, cv=cv, scoring=scoring)
             cv_results.append({
                 'Model': name, 'Metric': m_name, 
                 'Mean Score': scores.mean(), 'Std Dev': scores.std()
             })
             
     # Final Fit
-    models['Logistic Regression'].fit(X_train_scaled, y_train)
-    models['XGBoost'].fit(X_train, y_train) # XGB handles unscaled fine
+    for name, model in models.items():
+        model.fit(X_train, y_train)
     
     # Predictions for ROC
     y_probs = {}
-    y_probs['Logistic Regression'] = models['Logistic Regression'].predict_proba(X_test_scaled)[:, 1]
-    y_probs['XGBoost'] = models['XGBoost'].predict_proba(X_test)[:, 1]
+    for name, model in models.items():
+        y_probs[name] = model.predict_proba(X_test)[:, 1]
     
     return {
         'cv_results': pd.DataFrame(cv_results),
@@ -892,6 +912,11 @@ def compute_feature_importance(model_data, random_state=42):
     y = model_data['y_train']
     feats = model_data['feature_names']
     
+    # Calculate class imbalance for XGBoost (same as in train_eval_models)
+    n_pos = y.sum()
+    n_neg = len(y) - n_pos
+    scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
+    
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
     
     xgb_imps = []
@@ -901,14 +926,14 @@ def compute_feature_importance(model_data, random_state=42):
         X_f, y_f = X.iloc[train_idx], y.iloc[train_idx]
         
         # XGB
-        m_xgb = xgb.XGBClassifier(eval_metric='logloss', random_state=random_state)
+        m_xgb = xgb.XGBClassifier(scale_pos_weight=scale_pos_weight, eval_metric='logloss', random_state=random_state)
         m_xgb.fit(X_f, y_f)
         xgb_imps.append(m_xgb.feature_importances_)
         
         # LR
         scaler = StandardScaler()
         X_fs = scaler.fit_transform(X_f)
-        m_lr = LogisticRegression(random_state=random_state)
+        m_lr = LogisticRegression(class_weight='balanced', random_state=random_state)
         m_lr.fit(X_fs, y_f)
         lr_coefs.append(m_lr.coef_[0])
         
