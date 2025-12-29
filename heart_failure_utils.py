@@ -488,6 +488,7 @@ def compute_km_statistics(km_data):
     # Stats
     plateau_height = y_orig.max()
     prob_1_year = np.interp(365, x_smooth, y_smooth) if x_smooth.max() >= 365 else None
+    prob_30_days = np.interp(30, x_smooth, y_smooth) if x_smooth.max() >= 30 else None
     
     # Median (time where cumulative death >= 50% of plateau)
     target_val = plateau_height * 0.5
@@ -506,6 +507,7 @@ def compute_km_statistics(km_data):
         'median_cumulative_prob': actual_val,
         'plateau_height': plateau_height,
         'prob_1_year': prob_1_year,
+        'prob_30_days': prob_30_days,
         'x_smooth': x_smooth,
         'y_smooth': y_smooth,
         'x_orig': x_orig,
@@ -530,7 +532,7 @@ def plot_kaplan_meier(km_data, palette=None, save_path=None):
     t_cross = stats['median_time']
     actual_val = stats['median_cumulative_prob']
     plateau_height = stats['plateau_height']
-    prob_1_year = stats['prob_1_year']
+    prob_30_days = stats.get('prob_30_days')
     target_val = stats['target_val']
     
     plt.figure(figsize=(7, 5))
@@ -557,9 +559,9 @@ def plot_kaplan_meier(km_data, palette=None, save_path=None):
         plt.text(t_cross + 5, actual_val, f"~{t_cross:.0f} days ({actual_val:.1%})", 
                  va='bottom', ha='left', fontsize=9, alpha=0.5)
 
-    if prob_1_year is not None:
-        plt.text(365, prob_1_year, f"{prob_1_year:.1%} at 1 year", 
-                 va='bottom', ha='center', fontsize=9, color='black', alpha=0.5)
+    if prob_30_days is not None:
+        plt.text(30, prob_30_days, f"{prob_30_days:.1%} at 30 days", 
+                 va='bottom', ha='left', fontsize=9, color='black', alpha=0.5)
 
     plt.text(x_orig[-1], plateau_height, f"plateau: {plateau_height:.1%}", 
              va='bottom', ha='right', fontsize=9, color='black', alpha=0.5)
@@ -850,6 +852,7 @@ def plot_model_performance(results, palette=None):
     pivot_mean.plot(kind='bar', ax=axes[0], yerr=pivot_std, capsize=4, 
                     color=colors, alpha=0.9, edgecolor='black', rot=0)
     axes[0].set_title('CV Model Performance (Mean ± Std)')
+    axes[0].set_ylabel("Score")
     axes[0].set_ylim(0, 1.1)
     axes[0].legend(loc='lower right')
     
@@ -863,6 +866,8 @@ def plot_model_performance(results, palette=None):
         
     axes[1].plot([0, 1], [0, 1], 'k--', alpha=0.5)
     axes[1].set_title('ROC Curves (Test Set)')
+    axes[1].set_xlabel("False Positive Rate")
+    axes[1].set_ylabel("True Positive Rate")
     axes[1].legend(loc='lower right')
     
     plt.tight_layout()
