@@ -778,8 +778,18 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
     """
     Trains Logistic Regression and XGBoost, evaluates with CV and Test set.
     """
-    X = df.drop(columns=[target_col, 'time'])
+    # Drop time column to avoid data leakage (and target)
+    drop_cols = [target_col]
+    if 'time' in df.columns:
+        drop_cols.append('time')
+        
+    X = df.drop(columns=drop_cols)
     y = df[target_col]
+
+    # Ensure target is numeric (it might be categorical)
+    if y.dtype.name == 'category':
+        y = y.astype(int)
+
     X = pd.get_dummies(X, drop_first=True)
     feature_names = X.columns.tolist()
 
@@ -791,10 +801,16 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
+    # Calculate class imbalance for XGBoost
+    # scale_pos_weight = count(negative) / count(positive)
+    n_pos = y_train.sum()
+    n_neg = len(y_train) - n_pos
+    scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
+
     # Models
     models = {
-        'Logistic Regression': LogisticRegression(random_state=random_state),
-        'XGBoost': xgb.XGBClassifier(eval_metric='logloss', random_state=random_state)
+        'Logistic Regression': LogisticRegression(class_weight='balanced', random_state=random_state),
+        'XGBoost': xgb.XGBClassifier(scale_pos_weight=scale_pos_weight, eval_metric='logloss', random_state=random_state)
     }
     
     # CV
