@@ -95,7 +95,6 @@ def set_plot_style():
     
     return selected_palette, div_cmap, gradient_cmap
 
-
 # =============================================================================
 # Exploratory Data Analysis (Visualization)
 # =============================================================================
@@ -236,7 +235,6 @@ def plot_categorical_distributions(df, cols, hue=None, palette=None, save_path=N
             plt.close()
         else:
             plt.show()
-
 
 # =============================================================================
 # Survival Analysis (Computation)
@@ -458,7 +456,6 @@ def compute_death_rate(df, n_days, time_col='time', event_col='DEATH_EVENT'):
         return 0.0
         
     return (filtered_df[event_col] == 1).mean()
-
 
 # =============================================================================
 # Survival Analysis (Visualization)
@@ -710,7 +707,6 @@ def plot_time_to_event_distribution(stats, palette=None, save_path=None):
     else:
         plt.show()
 
-
 # =============================================================================
 # Statistical Analysis
 # =============================================================================
@@ -773,7 +769,6 @@ def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palet
         plt.title(f"{col} distribution by {target_col} (p={p:.3g})")
         plt.tight_layout()
         plt.show()
-
 
 # =============================================================================
 # Machine Learning
@@ -940,7 +935,6 @@ def plot_feature_importance(importance_data, palette=None):
     plt.gca().invert_yaxis()
     plt.tight_layout()
     plt.show()
-
 
 # =============================================================================
 # Notebook Wrappers
