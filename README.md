@@ -12,7 +12,7 @@ Created by Giulio Matteucci in 2025 as a biomedical data science portfolio proje
 ## Dataset
 The dataset used is the **Heart Failure Clinical Records Dataset**.
 - **Source**: Kaggle (originally from UCI Machine Learning Repository).
-- **Size**: The provided file contains 5000 records. However, EDA reveals significant duplication. After deduplication, the dataset consists of **299 unique patients**.
+- **Size**: The provided file contains 5000 records. However, EDA reveals significant duplication that is adressed by deduplication.
 - **Target Variable**: `DEATH_EVENT` (0 = Survived, 1 = Deceased)
 - **Key Features**:
   - `age`: Age of the patient
