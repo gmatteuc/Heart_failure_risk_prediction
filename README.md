@@ -19,12 +19,18 @@ The dataset used is the **Heart Failure Clinical Records Dataset**.
 - **Size**: The provided file contains 5000 records; however, EDA reveals significant duplication that is addressed by deduplication.
 - **Target Variable**: `DEATH_EVENT` (0 = Survived, 1 = Deceased)
 - **Key Features**:
-  - `age`: Age of the patient
-  - `ejection_fraction`: Percentage of blood leaving the heart at each contraction
-  - `serum_creatinine`: Level of serum creatinine in the blood
-  - `serum_sodium`: Level of serum sodium in the blood
+  - `age`: Age of the patient (years)
+  - `anaemia`: Decrease of red blood cells or hemoglobin (boolean)
+  - `creatinine_phosphokinase`: Level of the CPK enzyme in the blood (mcg/L)
+  - `diabetes`: If the patient has diabetes (boolean)
+  - `ejection_fraction`: Percentage of blood leaving the heart at each contraction (percentage)
+  - `high_blood_pressure`: If the patient has hypertension (boolean)
+  - `platelets`: Platelets in the blood (kiloplatelets/mL)
+  - `sex`: Woman or man (binary)
+  - `serum_creatinine`: Level of serum creatinine in the blood (mg/dL)
+  - `serum_sodium`: Level of serum sodium in the blood (mEq/L)
+  - `smoking`: If the patient smokes or not (boolean)
   - `time`: Follow-up period (days)
-  - Comorbidities: `anaemia`, `diabetes`, `high_blood_pressure`, `smoking`
 
 ## Methodology
 
@@ -42,8 +48,8 @@ Two models were trained and evaluated to predict `DEATH_EVENT`:
 - **XGBoost Classifier**: Gradient boosting model capturing non-linear relationships.
 
 **Evaluation Metrics**:
-- Accuracy, Recall, F1-Score
-- ROC-AUC (Receiver Operating Characteristic - Area Under Curve)
+- Accuracy and Recall.
+- ROC-AUC (Receiver Operating Characteristic - Area Under Curve).
 - Stratified K-Fold Cross-Validation for robust estimation.
 
 These models are designed with a risk stratification perspective in mind: helping flag high-risk patients who may benefit from closer follow-up.
@@ -58,7 +64,7 @@ These models are designed with a risk stratification perspective in mind: helpin
 
 ## Key Findings
 - **Top Risk Factors**: `age`, `ejection_fraction` (low levels), `serum_creatinine`, `serum_sodium` (low levels), are highly associated with mortality risk.
-- **Model Performance**: Logistic Regression and XGBoost both achieve strong predictive performance, with XGBoost capturing more complex interactions.
+- **Model Performance**: Logistic Regression and XGBoost both achieve strong predictive performance, with XGBoost capturing more complex interactions. In stratified cross-validation, the XGBoost mortality classifier achieves accuracy ≈ 0.92 while the best survival model reach C-index ≈ 0.90.
 
 ![Model performance](misc/model_performance_example.png)
 
