@@ -1,4 +1,4 @@
-# Heart Failure Prediction & Survival Analysis
+# Heart Failure Risk Prediction
 
 ## Project Overview
 This project focuses on analyzing clinical records of heart failure patients to identify key risk factors for mortality and predict survival outcomes. As a biomedical data science portfolio project, it demonstrates a complete workflow from Exploratory Data Analysis (EDA) and statistical testing to Machine Learning modeling and Survival Analysis.
