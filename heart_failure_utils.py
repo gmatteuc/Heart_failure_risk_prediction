@@ -103,7 +103,7 @@ def set_plot_style():
 # Exploratory Data Analysis (Visualization)
 # =============================================================================
 
-def plot_numeric_distributions(df, cols, hue=None, save_path=None):
+def plot_numeric_distributions(df, cols, hue=None, save_path='output'):
     """
     Plots side-by-side histograms (count and density) for numeric columns.
     
@@ -111,7 +111,7 @@ def plot_numeric_distributions(df, cols, hue=None, save_path=None):
         df (pd.DataFrame): Input data.
         cols (list): List of numeric column names to plot.
         hue (str, optional): Column name for color encoding.
-        save_path (str, optional): Directory to save figures. If None, shows plot.
+        save_path (str, optional): Directory to save figures. Defaults to 'output'.
     """
     if save_path:
         os.makedirs(save_path, exist_ok=True)
@@ -133,11 +133,10 @@ def plot_numeric_distributions(df, cols, hue=None, save_path=None):
         if save_path:
             fname = f"histogram_{col.lower().replace(' ', '_')}.png"
             plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
-            plt.close()
-        else:
-            plt.show()
+        
+        plt.show()
 
-def plot_correlation_heatmap(df, cols, target_col=None, cmap="coolwarm", save_path=None):
+def plot_correlation_heatmap(df, cols, target_col=None, cmap="coolwarm", save_path='output'):
     """
     Plots correlation heatmaps. If target_col is provided, plots split by target class.
     
@@ -146,7 +145,7 @@ def plot_correlation_heatmap(df, cols, target_col=None, cmap="coolwarm", save_pa
         cols (list): Numeric columns for correlation.
         target_col (str, optional): Binary target column to split analysis.
         cmap (str or Colormap): Colormap for heatmap.
-        save_path (str, optional): Path to save the figure.
+        save_path (str, optional): Path to save the figure. Defaults to 'output'.
     """
     corr_all = df[cols].corr()
     vmin, vmax = -0.4, 0.4
@@ -176,16 +175,16 @@ def plot_correlation_heatmap(df, cols, target_col=None, cmap="coolwarm", save_pa
     plt.tight_layout(rect=[0, 0, 1, 0.95] if target_col else None)
     
     if save_path:
-        # If save_path is a directory, append filename, else use as is
         if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
              os.makedirs(save_path, exist_ok=True)
-             save_path = os.path.join(save_path, "correlation_heatmaps.png")
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
+             save_path_full = os.path.join(save_path, "correlation_heatmaps.png")
+        else:
+             save_path_full = save_path
+        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    
+    plt.show()
 
-def plot_pairplot(df, cols, hue=None, save_path=None):
+def plot_pairplot(df, cols, hue=None, save_path='output'):
     """
     Creates a pairplot for selected variables.
     """
@@ -195,13 +194,14 @@ def plot_pairplot(df, cols, hue=None, save_path=None):
     if save_path:
         if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
              os.makedirs(save_path, exist_ok=True)
-             save_path = os.path.join(save_path, "pairplot.png")
-        g.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
+             save_path_full = os.path.join(save_path, "pairplot.png")
+        else:
+             save_path_full = save_path
+        g.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    
+    plt.show()
 
-def plot_categorical_distributions(df, cols, hue=None, palette=None, save_path=None):
+def plot_categorical_distributions(df, cols, hue=None, palette=None, save_path='output'):
     """
     Plots categorical variables: raw counts and outcome-normalized proportions.
     """
@@ -236,9 +236,8 @@ def plot_categorical_distributions(df, cols, hue=None, palette=None, save_path=N
         if save_path:
             fname = f"barplot_{col}.png"
             plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
-            plt.close()
-        else:
-            plt.show()
+        
+        plt.show()
 
 # =============================================================================
 # Survival Analysis (Computation)
@@ -686,11 +685,14 @@ def train_eval_survival_models(df, time_col='time', event_col='DEATH_EVENT', tes
         'time_grid': time_grid
     }
 
-def plot_survival_model_performance(results, palette=None):
+def plot_survival_model_performance(results, palette=None, save_path='output'):
     df_res = results['cv_results']
     km_curves = results.get('km_curves')
     time_grid = results.get('time_grid')
     
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     # Setup Figure: 2 Rows. Top: Barplot. Bottom: Risk Stratification for each model.
     fig = plt.figure(figsize=(12, 10))
     gs = fig.add_gridspec(2, 2)
@@ -750,6 +752,10 @@ def plot_survival_model_performance(results, palette=None):
     plot_risk_strat_cv('Survival XGBoost', ax_xgb)
 
     plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(os.path.join(save_path, "survival_model_performance.png"), dpi=300, bbox_inches='tight')
+    
     plt.show()
 
 def compute_survival_feature_importance(model_data, random_state=42):
@@ -791,10 +797,13 @@ def compute_survival_feature_importance(model_data, random_state=42):
         'xgb': pd.DataFrame(xgb_imps, columns=feats)
     }
 
-def plot_survival_feature_importance(importance_data, palette=None):
+def plot_survival_feature_importance(importance_data, palette=None, save_path='output'):
     """
     Plots top feature importances for survival models.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     # Cox
     df_cox = importance_data['cox']
     mean_cox = df_cox.mean()
@@ -811,6 +820,10 @@ def plot_survival_feature_importance(importance_data, palette=None):
     plt.axvline(0, color='black', lw=0.8)
     plt.gca().invert_yaxis()
     plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(os.path.join(save_path, "survival_feature_importance_cox.png"), dpi=300, bbox_inches='tight')
+    
     plt.show()
     
     # XGB
@@ -824,34 +837,45 @@ def plot_survival_feature_importance(importance_data, palette=None):
     plt.title('Top 10 Features (Survival XGBoost Importance)')
     plt.gca().invert_yaxis()
     plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(os.path.join(save_path, "survival_feature_importance_xgb.png"), dpi=300, bbox_inches='tight')
+    
     plt.show()
 
-def analyze_survival_feature_importance(results, palette=None, random_state=42):
+def analyze_survival_feature_importance(results, palette=None, random_state=42, save_path='output'):
     """Wrapper for survival feature importance."""
     imps = compute_survival_feature_importance(results, random_state)
-    plot_survival_feature_importance(imps, palette)
+    plot_survival_feature_importance(imps, palette, save_path)
 
-def compare_survival_models_performance(df, time_col='time', event_col='DEATH_EVENT', test_size=0.2, random_state=42, plot=True, palette=None, tune_xgb=False):
+def compare_survival_models_performance(df, time_col='time', event_col='DEATH_EVENT', test_size=0.2, random_state=42, plot=True, palette=None, tune_xgb=False, save_path='output'):
     """Wrapper for survival model comparison."""
     res = train_eval_survival_models(df, time_col, event_col, test_size, random_state, tune_xgb)
     if plot:
-        plot_survival_model_performance(res, palette)
+        plot_survival_model_performance(res, palette, save_path)
     return res
 
-def plot_cox_weights(cph, palette=None, save_path=None):
+def plot_cox_weights(cph, palette=None, save_path='output'):
     """
     Plots the hazard ratios (exp(coef)) and their confidence intervals.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     plt.figure(figsize=(10, 6))
     cph.plot()
     plt.title("Cox Model Coefficients (Log-Hazard Ratios) with 95% CI")
     plt.tight_layout()
     
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
+        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
+             os.makedirs(save_path, exist_ok=True)
+             save_path_full = os.path.join(save_path, "cox_weights.png")
+        else:
+             save_path_full = save_path
+        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    
+    plt.show()
 
 # =============================================================================
 # Survival Analysis (Visualization)
@@ -919,10 +943,13 @@ def compute_km_statistics(km_data):
         'target_val': target_val
     }
 
-def plot_kaplan_meier(km_data, palette=None, save_path=None):
+def plot_kaplan_meier(km_data, palette=None, save_path='output'):
     """
     Plots a single Kaplan-Meier curve with annotations.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     times = km_data['times']
     ci_lower = km_data['ci_lower']
     ci_upper = km_data['ci_upper']
@@ -978,15 +1005,22 @@ def plot_kaplan_meier(km_data, palette=None, save_path=None):
     plt.tight_layout()
     
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
+        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
+             os.makedirs(save_path, exist_ok=True)
+             save_path_full = os.path.join(save_path, "kaplan_meier_curve.png")
+        else:
+             save_path_full = save_path
+        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    
+    plt.show()
 
-def plot_grouped_kaplan_meier(grouped_data, target_day=365, save_path=None):
+def plot_grouped_kaplan_meier(grouped_data, target_day=365, save_path='output'):
     """
     Plots grouped KM curves, median times, and survival probabilities.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     groups = grouped_data['groups']
     n_groups = len(groups)
     
@@ -1081,15 +1115,23 @@ def plot_grouped_kaplan_meier(grouped_data, target_day=365, save_path=None):
     plt.tight_layout()
     
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
+        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
+             os.makedirs(save_path, exist_ok=True)
+             fname = f"grouped_kaplan_meier_{grouped_data['group_col']}.png"
+             save_path_full = os.path.join(save_path, fname)
+        else:
+             save_path_full = save_path
+        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    
+    plt.show()
 
-def plot_time_to_event_distribution(stats, palette=None, save_path=None):
+def plot_time_to_event_distribution(stats, palette=None, save_path='output'):
     """
     Plots the distribution of time-to-event.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     times = stats['times']
     mean_val = stats['mean']
     median_val = stats['median']
@@ -1109,10 +1151,14 @@ def plot_time_to_event_distribution(stats, palette=None, save_path=None):
     plt.grid(True, alpha=0.3)
     
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
+        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
+             os.makedirs(save_path, exist_ok=True)
+             save_path_full = os.path.join(save_path, "time_to_event_distribution.png")
+        else:
+             save_path_full = save_path
+        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    
+    plt.show()
 
 # =============================================================================
 # Statistical Analysis
@@ -1153,10 +1199,13 @@ def compute_variable_associations(df, target_col='DEATH_EVENT', numeric_cols=Non
             
     return results
 
-def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palette=None):
+def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palette=None, save_path='output'):
     """
     Plots significant associations found by compute_variable_associations.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     # Numeric
     for item in associations['numeric']:
         col = item['col']
@@ -1165,6 +1214,11 @@ def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palet
         sns.boxplot(data=df, x=target_col, y=col, hue=target_col, legend=False, palette=palette[:2] if palette else None)
         plt.title(f"{col} by {target_col} (p={p:.3g})")
         plt.tight_layout()
+        
+        if save_path:
+            fname = f"boxplot_{col}.png"
+            plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
+        
         plt.show()
         
     # Categorical
@@ -1175,6 +1229,11 @@ def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palet
         sns.countplot(data=df, x=col, hue=target_col, palette=palette[:2] if palette else None)
         plt.title(f"{col} distribution by {target_col} (p={p:.3g})")
         plt.tight_layout()
+        
+        if save_path:
+            fname = f"countplot_{col}.png"
+            plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
+        
         plt.show()
 
 # =============================================================================
@@ -1347,10 +1406,13 @@ def tune_xgboost(df, target_col='DEATH_EVENT', n_iter=10, random_state=42):
     
     return search.best_params_, search.best_score_
 
-def plot_model_performance(results, palette=None):
+def plot_model_performance(results, palette=None, save_path='output'):
     """
     Plots CV performance metrics, ROC curves, and Confusion Matrices.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     df_res = results['cv_results']
     y_test = results['y_test']
     y_probs = results['y_probs']
@@ -1408,6 +1470,10 @@ def plot_model_performance(results, palette=None):
             ax_cm.grid(False)
             
     plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(os.path.join(save_path, "model_performance.png"), dpi=300, bbox_inches='tight')
+    
     plt.show()
 
 def compute_feature_importance(model_data, random_state=42):
@@ -1448,10 +1514,13 @@ def compute_feature_importance(model_data, random_state=42):
         'lr': pd.DataFrame(lr_coefs, columns=feats)
     }
 
-def plot_feature_importance(importance_data, palette=None):
+def plot_feature_importance(importance_data, palette=None, save_path='output'):
     """
     Plots top feature importances.
     """
+    if save_path:
+        os.makedirs(save_path, exist_ok=True)
+
     # XGB
     df_xgb = importance_data['xgb']
     mean_xgb = df_xgb.mean().sort_values(ascending=False).head(10)
@@ -1463,6 +1532,10 @@ def plot_feature_importance(importance_data, palette=None):
     plt.title('Top 10 Features (XGBoost Importance)')
     plt.gca().invert_yaxis()
     plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(os.path.join(save_path, "feature_importance_xgb.png"), dpi=300, bbox_inches='tight')
+    
     plt.show()
     
     # LR
@@ -1481,25 +1554,29 @@ def plot_feature_importance(importance_data, palette=None):
     plt.axvline(0, color='black', lw=0.8)
     plt.gca().invert_yaxis()
     plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(os.path.join(save_path, "feature_importance_lr.png"), dpi=300, bbox_inches='tight')
+    
     plt.show()
 
 # =============================================================================
 # Notebook Wrappers
 # =============================================================================
 
-def analyze_kaplan_meier(df, duration_col='time', event_col='DEATH_EVENT', plot=True, palette=None, **kwargs):
+def analyze_kaplan_meier(df, duration_col='time', event_col='DEATH_EVENT', plot=True, palette=None, save_path='output', **kwargs):
     """Wrapper for backward compatibility."""
     km = compute_kaplan_meier(df, duration_col, event_col, **kwargs)
     stats = compute_km_statistics(km)
     
     if plot:
-        plot_kaplan_meier(km, palette)
+        plot_kaplan_meier(km, palette, save_path)
         
     return stats
 
 def analyze_grouped_kaplan_meier(df, group_col, time_col='time', event_col='DEATH_EVENT', 
                                n_bins=4, is_numeric=False, target_day=365, 
-                               save_path=None, plot=True, bootstrap_ci=True, n_jobs=1):
+                               save_path='output', plot=True, bootstrap_ci=True, n_jobs=1):
     """Wrapper for backward compatibility."""
     res = compute_grouped_kaplan_meier(df, group_col, time_col, event_col, 
                                      n_bins, is_numeric, target_day, bootstrap_ci, n_jobs)
@@ -1507,30 +1584,30 @@ def analyze_grouped_kaplan_meier(df, group_col, time_col='time', event_col='DEAT
         plot_grouped_kaplan_meier(res, target_day, save_path)
     return res['metrics']
 
-def analyze_time_to_death(df, time_col='time', event_col='DEATH_EVENT', plot=False, palette=None):
+def analyze_time_to_death(df, time_col='time', event_col='DEATH_EVENT', plot=False, palette=None, save_path='output'):
     """Wrapper for backward compatibility."""
     stats = compute_time_to_event_stats(df, time_col, event_col)
     if plot:
-        plot_time_to_event_distribution(stats, palette)
+        plot_time_to_event_distribution(stats, palette, save_path)
     return stats
 
 def analyze_variable_associations(df, target_col='DEATH_EVENT', numeric_cols=None, 
-                                categorical_cols=None, p_threshold=0.05, plot=True, palette=None):
+                                categorical_cols=None, p_threshold=0.05, plot=True, palette=None, save_path='output'):
     """Wrapper for backward compatibility."""
     res = compute_variable_associations(df, target_col, numeric_cols, categorical_cols, p_threshold)
     if plot:
-        plot_variable_associations(df, res, target_col, palette)
+        plot_variable_associations(df, res, target_col, palette, save_path)
     return res
 
-def compare_models_performance(df, target_col='DEATH_EVENT', test_size=0.2, random_state=42, plot=True, palette=None, xgb_params=None, tune_xgb=False):
+def compare_models_performance(df, target_col='DEATH_EVENT', test_size=0.2, random_state=42, plot=True, palette=None, xgb_params=None, tune_xgb=False, save_path='output'):
     """Wrapper for backward compatibility."""
     res = train_eval_models(df, target_col, test_size, random_state, xgb_params, tune_xgb)
     if plot:
-        plot_model_performance(res, palette)
+        plot_model_performance(res, palette, save_path)
     return res
 
-def analyze_feature_importance(model_data, random_state=42, palette=None):
+def analyze_feature_importance(model_data, random_state=42, palette=None, save_path='output'):
     """Wrapper for backward compatibility."""
     imps = compute_feature_importance(model_data, random_state)
-    plot_feature_importance(imps, palette)
+    plot_feature_importance(imps, palette, save_path)
 
