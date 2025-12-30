@@ -164,16 +164,21 @@ def compute_km_statistics(km_data):
     
     # Median (time where cumulative death >= 50% of plateau)
     # We keep using smoothed curve for finding the intersection time to avoid discrete jumps
-    target_val = plateau_height * 0.5
-    indices = np.where(y_smooth >= target_val)[0]
-    
-    if len(indices) > 0:
-        idx = indices[0]
-        t_cross = x_smooth[idx]
-        actual_val = y_smooth[idx]
+    if plateau_height > 0:
+        target_val = plateau_height * 0.5
+        indices = np.where(y_smooth >= target_val)[0]
+        
+        if len(indices) > 0:
+            idx = indices[0]
+            t_cross = x_smooth[idx]
+            actual_val = y_smooth[idx]
+        else:
+            t_cross = None
+            actual_val = None
     else:
         t_cross = None
         actual_val = None
+        target_val = 0.0
         
     return {
         'median_time': t_cross,

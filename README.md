@@ -11,6 +11,9 @@ The goal is to answer two main questions:
 1. **What are the most significant risk factors associated with heart failure mortality?**
 2. **Can we use routinely collected clinical features to accurately predict patient survival and stratify patients into meaningful risk groups?**
 
+**Clinical use case scenario:**
+*Imagine working with a cardiology ward that needs to identify patients at high risk of death within the next year using only routinely collected clinical data. The aim is not to replace clinicians, but to provide a decision-support tool that helps flag high-risk patients earlier, prioritise follow-up, allocate monitoring resources more efficiently, and ultimately improve patient management.*
+
 Created by Giulio Matteucci in 2025 as a biomedical data science portfolio project.
 
 ## Dataset
@@ -60,7 +63,7 @@ These models are designed with a risk stratification perspective in mind: helpin
 
 ### 4. Survival Analysis
 - **Custom Kaplan-Meier Implementation**: High-performance, vectorized NumPy implementation to estimate survival probability over time.
-- **Stratified Analysis**: Survival curves compared across risk groups (e.g., age ranges, ejection fraction levels) with bootstrap confidence intervals.
+- **Stratified Analysis**: Survival curves compared across risk groups (e.g., age ranges, ejection fraction levels) with bootstrap confidence intervals (accelerated via multithreading).
 
 ## Key Findings
 - **Top Risk Factors**: `age`, `ejection_fraction` (low levels), `serum_creatinine`, `serum_sodium` (low levels), are highly associated with mortality risk.
@@ -76,6 +79,7 @@ In practice, this demonstrates that routinely collected hospital data can be tra
 │   └── heart_failure_clinical_records.csv  # Dataset
 ├── misc/                                   # Miscellaneous assets (images, etc.)
 ├── output/                                 # Generated plots and figures
+├── tests/                                  # Unit tests
 ├── heart_failure_challenge.ipynb           # Main analysis notebook
 ├── heart_failure_utils.py                  # Main utility module (facade)
 ├── hf_analysis.py                          # Computation and modeling functions
