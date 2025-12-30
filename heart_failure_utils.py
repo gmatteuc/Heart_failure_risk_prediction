@@ -57,6 +57,32 @@ from lifelines import CoxPHFitter, KaplanMeierFitter
 from lifelines.utils import concordance_index
 
 # =============================================================================
+# Plot Saving
+# =============================================================================
+
+def _save_plot(save_path, default_filename):
+    """
+    Internal helper to handle plot saving logic.
+    Supports both directory paths (appends default_filename) and file paths.
+    """
+    if not save_path:
+        return
+        
+    # Check if save_path looks like a file (has extension)
+    if save_path.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf', '.svg')):
+        # It's a file path
+        parent = os.path.dirname(save_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        save_path_full = save_path
+    else:
+        # It's a directory
+        os.makedirs(save_path, exist_ok=True)
+        save_path_full = os.path.join(save_path, default_filename)
+        
+    plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+
+# =============================================================================
 # Configuration & Style
 # =============================================================================
 
@@ -130,9 +156,8 @@ def plot_numeric_distributions(df, cols, hue=None, save_path='output'):
         
         plt.tight_layout()
         
-        if save_path:
-            fname = f"histogram_{col.lower().replace(' ', '_')}.png"
-            plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
+        fname = f"histogram_{col.lower().replace(' ', '_')}.png"
+        _save_plot(save_path, fname)
         
         plt.show()
 
@@ -174,13 +199,7 @@ def plot_correlation_heatmap(df, cols, target_col=None, cmap="coolwarm", save_pa
         
     plt.tight_layout(rect=[0, 0, 1, 0.95] if target_col else None)
     
-    if save_path:
-        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
-             os.makedirs(save_path, exist_ok=True)
-             save_path_full = os.path.join(save_path, "correlation_heatmaps.png")
-        else:
-             save_path_full = save_path
-        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "correlation_heatmaps.png")
     
     plt.show()
 
@@ -191,13 +210,7 @@ def plot_pairplot(df, cols, hue=None, save_path='output'):
     g = sns.pairplot(df, vars=cols, hue=hue)
     g.fig.suptitle(f"Pairwise relationships (color coded by {hue})", fontsize=14, y=1.02)
     
-    if save_path:
-        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
-             os.makedirs(save_path, exist_ok=True)
-             save_path_full = os.path.join(save_path, "pairplot.png")
-        else:
-             save_path_full = save_path
-        g.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "pairplot.png")
     
     plt.show()
 
@@ -233,9 +246,8 @@ def plot_categorical_distributions(df, cols, hue=None, palette=None, save_path='
 
         plt.tight_layout()
         
-        if save_path:
-            fname = f"barplot_{col}.png"
-            plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
+        fname = f"barplot_{col.lower().replace(' ', '_')}.png"
+        _save_plot(save_path, fname)
         
         plt.show()
 
@@ -753,8 +765,7 @@ def plot_survival_model_performance(results, palette=None, save_path='output'):
 
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(os.path.join(save_path, "survival_model_performance.png"), dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "survival_model_performance.png")
     
     plt.show()
 
@@ -821,8 +832,7 @@ def plot_survival_feature_importance(importance_data, palette=None, save_path='o
     plt.gca().invert_yaxis()
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(os.path.join(save_path, "survival_feature_importance_cox.png"), dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "survival_feature_importance_cox.png")
     
     plt.show()
     
@@ -838,8 +848,7 @@ def plot_survival_feature_importance(importance_data, palette=None, save_path='o
     plt.gca().invert_yaxis()
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(os.path.join(save_path, "survival_feature_importance_xgb.png"), dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "survival_feature_importance_xgb.png")
     
     plt.show()
 
@@ -867,13 +876,7 @@ def plot_cox_weights(cph, palette=None, save_path='output'):
     plt.title("Cox Model Coefficients (Log-Hazard Ratios) with 95% CI")
     plt.tight_layout()
     
-    if save_path:
-        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
-             os.makedirs(save_path, exist_ok=True)
-             save_path_full = os.path.join(save_path, "cox_weights.png")
-        else:
-             save_path_full = save_path
-        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "cox_weights.png")
     
     plt.show()
 
@@ -1004,13 +1007,7 @@ def plot_kaplan_meier(km_data, palette=None, save_path='output'):
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     
-    if save_path:
-        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
-             os.makedirs(save_path, exist_ok=True)
-             save_path_full = os.path.join(save_path, "kaplan_meier_curve.png")
-        else:
-             save_path_full = save_path
-        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "kaplan_meier_curve.png")
     
     plt.show()
 
@@ -1115,13 +1112,8 @@ def plot_grouped_kaplan_meier(grouped_data, target_day=365, save_path='output'):
     plt.tight_layout()
     
     if save_path:
-        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
-             os.makedirs(save_path, exist_ok=True)
-             fname = f"grouped_kaplan_meier_{grouped_data['group_col']}.png"
-             save_path_full = os.path.join(save_path, fname)
-        else:
-             save_path_full = save_path
-        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+        fname = f"grouped_kaplan_meier_{grouped_data['group_col'].lower().replace(' ', '_')}.png"
+        _save_plot(save_path, fname)
     
     plt.show()
 
@@ -1150,13 +1142,7 @@ def plot_time_to_event_distribution(stats, palette=None, save_path='output'):
     plt.legend()
     plt.grid(True, alpha=0.3)
     
-    if save_path:
-        if os.path.isdir(os.path.dirname(save_path) or ".") and not save_path.endswith('.png'):
-             os.makedirs(save_path, exist_ok=True)
-             save_path_full = os.path.join(save_path, "time_to_event_distribution.png")
-        else:
-             save_path_full = save_path
-        plt.savefig(save_path_full, dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "time_to_event_distribution.png")
     
     plt.show()
 
@@ -1216,8 +1202,8 @@ def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palet
         plt.tight_layout()
         
         if save_path:
-            fname = f"boxplot_{col}.png"
-            plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
+            fname = f"boxplot_{col.lower().replace(' ', '_')}.png"
+            _save_plot(save_path, fname)
         
         plt.show()
         
@@ -1231,8 +1217,8 @@ def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palet
         plt.tight_layout()
         
         if save_path:
-            fname = f"countplot_{col}.png"
-            plt.savefig(os.path.join(save_path, fname), dpi=300, bbox_inches='tight')
+            fname = f"countplot_{col.lower().replace(' ', '_')}.png"
+            _save_plot(save_path, fname)
         
         plt.show()
 
@@ -1471,8 +1457,7 @@ def plot_model_performance(results, palette=None, save_path='output'):
             
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(os.path.join(save_path, "model_performance.png"), dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "model_performance.png")
     
     plt.show()
 
@@ -1533,8 +1518,7 @@ def plot_feature_importance(importance_data, palette=None, save_path='output'):
     plt.gca().invert_yaxis()
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(os.path.join(save_path, "feature_importance_xgb.png"), dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "feature_importance_xgb.png")
     
     plt.show()
     
@@ -1555,8 +1539,7 @@ def plot_feature_importance(importance_data, palette=None, save_path='output'):
     plt.gca().invert_yaxis()
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(os.path.join(save_path, "feature_importance_lr.png"), dpi=300, bbox_inches='tight')
+    _save_plot(save_path, "feature_importance_lr.png")
     
     plt.show()
 
