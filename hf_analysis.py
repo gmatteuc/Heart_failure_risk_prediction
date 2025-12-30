@@ -471,6 +471,9 @@ def train_eval_survival_models(df, time_col='time', event_col='DEATH_EVENT', tes
             cph.fit(df_tr, duration_col=time_col, event_col=event_col)
             
             pred_cox = cph.predict_partial_hazard(X_val)
+            # Note: lifelines.utils.concordance_index expects scores where higher values 
+            # indicate longer survival times. Since hazard is inversely related to survival 
+            # (higher hazard = shorter survival), we must use the negative hazard.
             c_index_cox = concordance_index(T_val, -pred_cox, E_val)
             cox_scores.append(c_index_cox)
             
@@ -486,6 +489,8 @@ def train_eval_survival_models(df, time_col='time', event_col='DEATH_EVENT', tes
         xgb_surv.fit(X_tr, y_tr_xgb)
         
         pred_xgb = xgb_surv.predict(X_val)
+        # Note: XGBoost with 'survival:cox' predicts log-hazard ratios (higher = higher risk).
+        # We negate predictions for concordance_index which expects higher scores = longer survival.
         c_index_xgb = concordance_index(T_val, -pred_xgb, E_val)
         xgb_scores.append(c_index_xgb)
         
