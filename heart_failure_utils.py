@@ -49,9 +49,12 @@ from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.model_selection import RandomizedSearchCV
 import xgboost as xgb
 from joblib import Parallel, delayed
+from lifelines import CoxPHFitter, KaplanMeierFitter
+from lifelines.utils import concordance_index
 
 # =============================================================================
 # Configuration & Style
@@ -468,6 +471,389 @@ def compute_death_rate(df, n_days, time_col='time', event_col='DEATH_EVENT'):
     return n_died_within / n_total
 
 # =============================================================================
+# Cox Proportional Hazards
+# =============================================================================
+
+def compute_cox_model(df, duration_col='time', event_col='DEATH_EVENT', penalizer=0.1):
+    """
+    Fits a Cox Proportional Hazards model and computes the C-index.
+    """
+    df = df.copy()
+    # Ensure event is integer (0/1) to prevent get_dummies from encoding it
+    df[event_col] = df[event_col].astype(int)
+    
+    # One-hot encode categorical variables
+    df_encoded = pd.get_dummies(df, drop_first=True)
+    
+    # Handle potential boolean columns by casting to int
+    for col in df_encoded.columns:
+        if df_encoded[col].dtype == 'bool':
+            df_encoded[col] = df_encoded[col].astype(int)
+            
+    cph = CoxPHFitter(penalizer=penalizer)
+    cph.fit(df_encoded, duration_col=duration_col, event_col=event_col)
+    
+    return cph
+
+def train_eval_survival_models(df, time_col='time', event_col='DEATH_EVENT', test_size=0.2, random_state=42, tune_xgb=False):
+    """
+    Trains CoxPH and Survival XGBoost, evaluates with CV (C-index).
+    """
+    df = df.copy()
+    df[event_col] = df[event_col].astype(int)
+    
+    X = df.drop(columns=[time_col, event_col])
+    T = df[time_col]
+    E = df[event_col]
+    
+    X = pd.get_dummies(X, drop_first=True)
+    feature_names = X.columns.tolist()
+    
+    # Split
+    X_train, X_test, T_train, T_test, E_train, E_test = train_test_split(
+        X, T, E, test_size=test_size, random_state=random_state, stratify=E
+    )
+    
+    # Default XGB params
+    xgb_params = {
+        'objective': 'survival:cox',
+        'eval_metric': 'cox-nloglik',
+        'random_state': random_state
+    }
+
+    # Hyperparameter Tuning for Survival XGBoost
+    if tune_xgb:
+        print("Tuning XGBoost hyperparameters (Survival)...")
+        import random
+        
+        param_dist = {
+            'n_estimators': [50, 100, 200],
+            'max_depth': [3, 4, 5, 6],
+            'learning_rate': [0.01, 0.05, 0.1, 0.2],
+            'subsample': [0.6, 0.8, 1.0],
+            'colsample_bytree': [0.6, 0.8, 1.0],
+            'min_child_weight': [1, 3, 5]
+        }
+        
+        best_score = -1
+        best_params = xgb_params.copy()
+        
+        # Simple Random Search
+        n_iter = 10
+        cv_tune = StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state)
+        
+        # Generate random combinations
+        keys = list(param_dist.keys())
+        combinations = []
+        for _ in range(n_iter):
+            comb = {k: random.choice(param_dist[k]) for k in keys}
+            combinations.append(comb)
+            
+        for i, params in enumerate(combinations):
+            current_params = xgb_params.copy()
+            current_params.update(params)
+            
+            fold_scores = []
+            for tr_idx, val_idx in cv_tune.split(X_train, E_train):
+                X_tr_t, X_val_t = X_train.iloc[tr_idx], X_train.iloc[val_idx]
+                T_tr_t, T_val_t = T_train.iloc[tr_idx], T_train.iloc[val_idx]
+                E_tr_t, E_val_t = E_train.iloc[tr_idx], E_train.iloc[val_idx]
+                
+                y_tr_t = np.where(E_tr_t == 1, T_tr_t, -T_tr_t)
+                
+                model = xgb.XGBRegressor(**current_params)
+                model.fit(X_tr_t, y_tr_t)
+                
+                pred = model.predict(X_val_t)
+                try:
+                    score = concordance_index(T_val_t, -pred, E_val_t)
+                    fold_scores.append(score)
+                except:
+                    pass
+            
+            if fold_scores:
+                mean_score = np.mean(fold_scores)
+                if mean_score > best_score:
+                    best_score = mean_score
+                    best_params = current_params
+        
+        print(f"Best Survival XGBoost Params: {best_params}")
+        xgb_params = best_params
+
+    # CV
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    cox_scores = []
+    xgb_scores = []
+    
+    # Storage for KM curves across folds
+    # We will store interpolated survival probabilities on a common time grid
+    max_time = T_train.max()
+    time_grid = np.linspace(0, max_time, 100)
+    
+    km_curves = {
+        'CoxPH': {'Low': [], 'High': []},
+        'Survival XGBoost': {'Low': [], 'High': []}
+    }
+    
+    for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, E_train)):
+        X_tr, X_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
+        T_tr, T_val = T_train.iloc[train_idx], T_train.iloc[val_idx]
+        E_tr, E_val = E_train.iloc[train_idx], E_train.iloc[val_idx]
+        
+        # Helper to compute and store KM for a fold
+        def process_fold_km(model_name, risk_scores, T_v, E_v):
+            median_risk = np.median(risk_scores)
+            low_mask = risk_scores <= median_risk
+            high_mask = ~low_mask
+            
+            for group_name, mask in [('Low', low_mask), ('High', high_mask)]:
+                if mask.sum() > 0:
+                    kmf = KaplanMeierFitter()
+                    kmf.fit(T_v[mask], event_observed=E_v[mask])
+                    # Interpolate to common grid
+                    # survival_function_ is indexed by time
+                    surv_prob = np.interp(time_grid, kmf.survival_function_.index.values, kmf.survival_function_['KM_estimate'].values)
+                    # Handle times before first event (prob=1) and after last (constant)
+                    # np.interp does constant extrapolation by default if x is sorted, which time_grid is.
+                    # But we need to be careful about the start.
+                    # If time_grid[0] < min(index), interp gives min(index) value. 
+                    # We want 1.0 for t=0.
+                    # Let's force 1.0 at t=0 if not present
+                    if time_grid[0] < kmf.survival_function_.index.min():
+                         # Find indices where time_grid is less than first observed time
+                         pre_indices = time_grid < kmf.survival_function_.index.min()
+                         surv_prob[pre_indices] = 1.0
+                    
+                    km_curves[model_name][group_name].append(surv_prob)
+
+        # --- CoxPH ---
+        try:
+            df_tr = X_tr.copy()
+            df_tr[time_col] = T_tr
+            df_tr[event_col] = E_tr
+            
+            cph = CoxPHFitter(penalizer=0.1)
+            cph.fit(df_tr, duration_col=time_col, event_col=event_col)
+            
+            pred_cox = cph.predict_partial_hazard(X_val)
+            c_index_cox = concordance_index(T_val, -pred_cox, E_val)
+            cox_scores.append(c_index_cox)
+            
+            process_fold_km('CoxPH', pred_cox, T_val, E_val)
+            
+        except Exception:
+            pass 
+
+        # --- XGBoost Survival ---
+        y_tr_xgb = np.where(E_tr == 1, T_tr, -T_tr)
+        
+        xgb_surv = xgb.XGBRegressor(**xgb_params)
+        xgb_surv.fit(X_tr, y_tr_xgb)
+        
+        pred_xgb = xgb_surv.predict(X_val)
+        c_index_xgb = concordance_index(T_val, -pred_xgb, E_val)
+        xgb_scores.append(c_index_xgb)
+        
+        process_fold_km('Survival XGBoost', pred_xgb, T_val, E_val)
+
+    # Aggregate Results
+    cv_results = [
+        {'Model': 'CoxPH', 'Metric': 'C-index', 'Mean Score': np.mean(cox_scores), 'Std Dev': np.std(cox_scores)},
+        {'Model': 'Survival XGBoost', 'Metric': 'C-index', 'Mean Score': np.mean(xgb_scores), 'Std Dev': np.std(xgb_scores)}
+    ]
+
+    # Final Fit
+    # Cox
+    df_train_full = X_train.copy()
+    df_train_full[time_col] = T_train
+    df_train_full[event_col] = E_train
+    final_cph = CoxPHFitter(penalizer=0.1)
+    final_cph.fit(df_train_full, duration_col=time_col, event_col=event_col)
+    
+    # XGB
+    y_train_full_xgb = np.where(E_train == 1, T_train, -T_train)
+    final_xgb = xgb.XGBRegressor(**xgb_params)
+    final_xgb.fit(X_train, y_train_full_xgb)
+    
+    return {
+        'cv_results': pd.DataFrame(cv_results),
+        'models': {'CoxPH': final_cph, 'Survival XGBoost': final_xgb},
+        'feature_names': feature_names,
+        'X_train': X_train,
+        'T_train': T_train,
+        'E_train': E_train,
+        'km_curves': km_curves,
+        'time_grid': time_grid
+    }
+
+def plot_survival_model_performance(results, palette=None):
+    df_res = results['cv_results']
+    km_curves = results.get('km_curves')
+    time_grid = results.get('time_grid')
+    
+    # Setup Figure: 2 Rows. Top: Barplot. Bottom: Risk Stratification for each model.
+    fig = plt.figure(figsize=(12, 10))
+    gs = fig.add_gridspec(2, 2)
+    
+    # --- 1. Bar Plot (Top, spanning both cols) ---
+    ax_bar = fig.add_subplot(gs[0, :])
+    pivot_mean = df_res.pivot(index='Model', columns='Metric', values='Mean Score')
+    pivot_std = df_res.pivot(index='Model', columns='Metric', values='Std Dev')
+    
+    colors = [palette[0], palette[2]] if palette else None
+    pivot_mean.plot(kind='bar', ax=ax_bar, yerr=pivot_std, capsize=4, 
+                    color=colors, alpha=0.9, edgecolor='black', rot=0)
+    
+    ax_bar.set_title('Survival Model Performance (CV Mean C-index ± Std)')
+    ax_bar.set_ylabel("C-index")
+    ax_bar.set_ylim(0.5, 1.0)
+    ax_bar.legend(loc='lower right')
+    
+    # --- 2. Risk Stratification Plots (Bottom) ---
+    # Helper to plot KM for risk groups with CV error bars
+    def plot_risk_strat_cv(model_name, ax):
+        if model_name not in km_curves:
+            return
+            
+        curves = km_curves[model_name]
+        
+        # Low Risk
+        if curves['Low']:
+            low_arr = np.array(curves['Low'])
+            low_mean = np.mean(low_arr, axis=0)
+            low_std = np.std(low_arr, axis=0)
+            
+            ax.plot(time_grid, low_mean, color=palette[0] if palette else 'green', label='Low Risk (Mean)')
+            ax.fill_between(time_grid, low_mean - low_std, low_mean + low_std, color=palette[0] if palette else 'green', alpha=0.2)
+            
+        # High Risk
+        if curves['High']:
+            high_arr = np.array(curves['High'])
+            high_mean = np.mean(high_arr, axis=0)
+            high_std = np.std(high_arr, axis=0)
+            
+            ax.plot(time_grid, high_mean, color=palette[1] if palette else 'red', label='High Risk (Mean)')
+            ax.fill_between(time_grid, high_mean - high_std, high_mean + high_std, color=palette[1] if palette else 'red', alpha=0.2)
+            
+        ax.set_title(f'{model_name}: Risk Stratification (CV Mean ± Std)')
+        ax.set_xlabel('Time (days)')
+        ax.set_ylabel('Survival Probability')
+        ax.set_ylim(0, 1)
+        ax.legend()
+
+    # Plot for Cox
+    ax_cox = fig.add_subplot(gs[1, 0])
+    plot_risk_strat_cv('CoxPH', ax_cox)
+        
+    # Plot for XGBoost
+    ax_xgb = fig.add_subplot(gs[1, 1])
+    plot_risk_strat_cv('Survival XGBoost', ax_xgb)
+
+    plt.tight_layout()
+    plt.show()
+
+def compute_survival_feature_importance(model_data, random_state=42):
+    """
+    Computes feature importance via CV for survival models.
+    """
+    X = model_data['X_train']
+    T = model_data['T_train']
+    E = model_data['E_train']
+    feats = model_data['feature_names']
+    
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    
+    cox_coefs = []
+    xgb_imps = []
+    
+    for train_idx, _ in cv.split(X, E):
+        X_f, T_f, E_f = X.iloc[train_idx], T.iloc[train_idx], E.iloc[train_idx]
+        
+        # Cox
+        try:
+            df_f = X_f.copy()
+            df_f['time'] = T_f
+            df_f['event'] = E_f
+            cph = CoxPHFitter(penalizer=0.1)
+            cph.fit(df_f, duration_col='time', event_col='event')
+            cox_coefs.append(cph.params_)
+        except:
+            pass
+            
+        # XGB
+        y_f_xgb = np.where(E_f == 1, T_f, -T_f)
+        xgb_model = xgb.XGBRegressor(objective='survival:cox', eval_metric='cox-nloglik', random_state=random_state)
+        xgb_model.fit(X_f, y_f_xgb)
+        xgb_imps.append(xgb_model.feature_importances_)
+        
+    return {
+        'cox': pd.DataFrame(cox_coefs), # columns are feats
+        'xgb': pd.DataFrame(xgb_imps, columns=feats)
+    }
+
+def plot_survival_feature_importance(importance_data, palette=None):
+    """
+    Plots top feature importances for survival models.
+    """
+    # Cox
+    df_cox = importance_data['cox']
+    mean_cox = df_cox.mean()
+    std_cox = df_cox.std()
+    
+    top_idx = mean_cox.abs().sort_values(ascending=False).head(10).index
+    top_coefs = mean_cox[top_idx]
+    top_std = std_cox[top_idx]
+    
+    plt.figure(figsize=(10, 6))
+    top_coefs.plot(kind='barh', xerr=top_std, capsize=4, 
+                   color=palette[0] if palette else 'blue', alpha=0.8, edgecolor='black')
+    plt.title('Top 10 Features (CoxPH Coefficients)')
+    plt.axvline(0, color='black', lw=0.8)
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.show()
+    
+    # XGB
+    df_xgb = importance_data['xgb']
+    mean_xgb = df_xgb.mean().sort_values(ascending=False).head(10)
+    std_xgb = df_xgb.std()[mean_xgb.index]
+    
+    plt.figure(figsize=(10, 6))
+    mean_xgb.plot(kind='barh', xerr=std_xgb, capsize=4, 
+                  color=palette[0] if palette else 'blue', alpha=0.8, edgecolor='black')
+    plt.title('Top 10 Features (Survival XGBoost Importance)')
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.show()
+
+def analyze_survival_feature_importance(results, palette=None, random_state=42):
+    """Wrapper for survival feature importance."""
+    imps = compute_survival_feature_importance(results, random_state)
+    plot_survival_feature_importance(imps, palette)
+
+def compare_survival_models_performance(df, time_col='time', event_col='DEATH_EVENT', test_size=0.2, random_state=42, plot=True, palette=None, tune_xgb=False):
+    """Wrapper for survival model comparison."""
+    res = train_eval_survival_models(df, time_col, event_col, test_size, random_state, tune_xgb)
+    if plot:
+        plot_survival_model_performance(res, palette)
+    return res
+
+def plot_cox_weights(cph, palette=None, save_path=None):
+    """
+    Plots the hazard ratios (exp(coef)) and their confidence intervals.
+    """
+    plt.figure(figsize=(10, 6))
+    cph.plot()
+    plt.title("Cox Model Coefficients (Log-Hazard Ratios) with 95% CI")
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+# =============================================================================
 # Survival Analysis (Visualization)
 # =============================================================================
 
@@ -776,7 +1162,7 @@ def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palet
         col = item['col']
         p = item['p_value']
         plt.figure(figsize=(6, 4))
-        sns.boxplot(data=df, x=target_col, y=col, palette=palette[:2] if palette else None)
+        sns.boxplot(data=df, x=target_col, y=col, hue=target_col, legend=False, palette=palette[:2] if palette else None)
         plt.title(f"{col} by {target_col} (p={p:.3g})")
         plt.tight_layout()
         plt.show()
@@ -795,7 +1181,7 @@ def plot_variable_associations(df, associations, target_col='DEATH_EVENT', palet
 # Machine Learning
 # =============================================================================
 
-def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=42):
+def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=42, xgb_params=None, tune_xgb=False):
     """
     Trains Logistic Regression and XGBoost, evaluates with CV and Test set.
     """
@@ -824,6 +1210,46 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
     n_neg = len(y_train) - n_pos
     scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
 
+    # Default XGB params
+    final_xgb_params = {
+        'scale_pos_weight': scale_pos_weight,
+        'eval_metric': 'logloss',
+        'random_state': random_state
+    }
+    
+    # Hyperparameter Tuning if requested
+    if tune_xgb:
+        print("Tuning XGBoost hyperparameters (Classification)...")
+        param_dist = {
+            'n_estimators': [50, 100, 200, 300],
+            'max_depth': [3, 4, 5, 6, 8],
+            'learning_rate': [0.01, 0.05, 0.1, 0.2],
+            'subsample': [0.6, 0.8, 1.0],
+            'colsample_bytree': [0.6, 0.8, 1.0],
+            'gamma': [0, 0.1, 0.2, 0.5],
+            'min_child_weight': [1, 3, 5]
+        }
+        
+        xgb_model = xgb.XGBClassifier(**final_xgb_params)
+        
+        search = RandomizedSearchCV(
+            xgb_model, 
+            param_distributions=param_dist, 
+            n_iter=15, 
+            scoring='accuracy', 
+            cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state),
+            verbose=0,
+            random_state=random_state,
+            n_jobs=-1
+        )
+        
+        search.fit(X_train, y_train)
+        print(f"Best XGBoost Params: {search.best_params_}")
+        final_xgb_params.update(search.best_params_)
+
+    if xgb_params:
+        final_xgb_params.update(xgb_params)
+
     # Models
     # Use Pipeline for LR to avoid data leakage during CV (scaling inside folds)
     models = {
@@ -831,7 +1257,7 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
             StandardScaler(), 
             LogisticRegression(class_weight='balanced', random_state=random_state)
         ),
-        'XGBoost': xgb.XGBClassifier(scale_pos_weight=scale_pos_weight, eval_metric='logloss', random_state=random_state)
+        'XGBoost': xgb.XGBClassifier(**final_xgb_params)
     }
     
     # CV
@@ -847,60 +1273,140 @@ def train_eval_models(df, target_col='DEATH_EVENT', test_size=0.2, random_state=
                 'Mean Score': scores.mean(), 'Std Dev': scores.std()
             })
             
-    # Final Fit
+    # Final Fit and Confusion Matrix
+    confusion_matrices = {}
+    y_probs = {}
+    
     for name, model in models.items():
         model.fit(X_train, y_train)
-    
-    # Predictions for ROC
-    y_probs = {}
-    for name, model in models.items():
+        y_pred = model.predict(X_test)
         y_probs[name] = model.predict_proba(X_test)[:, 1]
+        confusion_matrices[name] = confusion_matrix(y_test, y_pred)
     
     return {
         'cv_results': pd.DataFrame(cv_results),
         'y_test': y_test,
         'y_probs': y_probs,
+        'confusion_matrices': confusion_matrices,
         'X_train': X_train,
         'y_train': y_train,
         'feature_names': feature_names
     }
 
+def tune_xgboost(df, target_col='DEATH_EVENT', n_iter=10, random_state=42):
+    """
+    Performs RandomizedSearchCV for XGBoost.
+    """
+    # Drop time column to avoid data leakage (and target)
+    drop_cols = [target_col]
+    if 'time' in df.columns:
+        drop_cols.append('time')
+        
+    X = df.drop(columns=drop_cols)
+    y = df[target_col]
+
+    # Ensure target is numeric
+    if y.dtype.name == 'category':
+        y = y.astype(int)
+
+    X = pd.get_dummies(X, drop_first=True)
+    
+    # Class imbalance
+    n_pos = y.sum()
+    n_neg = len(y) - n_pos
+    scale_pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
+    
+    param_dist = {
+        'n_estimators': [50, 100, 200, 300],
+        'max_depth': [3, 4, 5, 6, 8],
+        'learning_rate': [0.01, 0.05, 0.1, 0.2],
+        'subsample': [0.6, 0.8, 1.0],
+        'colsample_bytree': [0.6, 0.8, 1.0],
+        'gamma': [0, 0.1, 0.2, 0.5],
+        'min_child_weight': [1, 3, 5]
+    }
+    
+    xgb_model = xgb.XGBClassifier(
+        scale_pos_weight=scale_pos_weight, 
+        eval_metric='logloss', 
+        random_state=random_state
+    )
+    
+    search = RandomizedSearchCV(
+        xgb_model, 
+        param_distributions=param_dist, 
+        n_iter=n_iter, 
+        scoring='accuracy', 
+        cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=random_state),
+        verbose=1,
+        random_state=random_state,
+        n_jobs=-1
+    )
+    
+    search.fit(X, y)
+    
+    return search.best_params_, search.best_score_
+
 def plot_model_performance(results, palette=None):
     """
-    Plots CV performance metrics and ROC curves.
+    Plots CV performance metrics, ROC curves, and Confusion Matrices.
     """
     df_res = results['cv_results']
     y_test = results['y_test']
     y_probs = results['y_probs']
+    confusion_matrices = results.get('confusion_matrices', {})
     
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    # Layout: 2 rows. Row 1: Bar chart + ROC. Row 2: Confusion Matrices.
+    fig = plt.figure(figsize=(14, 10))
+    gs = fig.add_gridspec(2, 2)
+    
+    ax_bar = fig.add_subplot(gs[0, 0])
+    ax_roc = fig.add_subplot(gs[0, 1])
     
     # 1. Bar Chart
     pivot_mean = df_res.pivot(index='Model', columns='Metric', values='Mean Score')
     pivot_std = df_res.pivot(index='Model', columns='Metric', values='Std Dev')
     
     colors = [palette[0], palette[2], palette[4]] if palette else None
-    pivot_mean.plot(kind='bar', ax=axes[0], yerr=pivot_std, capsize=4, 
+    pivot_mean.plot(kind='bar', ax=ax_bar, yerr=pivot_std, capsize=4, 
                     color=colors, alpha=0.9, edgecolor='black', rot=0)
-    axes[0].set_title('CV Model Performance (Mean ± Std)')
-    axes[0].set_ylabel("Score")
-    axes[0].set_ylim(0, 1.1)
-    axes[0].legend(loc='lower right')
+    ax_bar.set_title('CV Model Performance (Mean ± Std)')
+    ax_bar.set_ylabel("Score")
+    ax_bar.set_ylim(0, 1.1)
+    ax_bar.legend(loc='lower right')
     
     # 2. ROC
     colors_roc = [palette[0], palette[2]] if palette else ['blue', 'red']
     for i, (name, prob) in enumerate(y_probs.items()):
         fpr, tpr, _ = roc_curve(y_test, prob)
         auc = roc_auc_score(y_test, prob)
-        axes[1].plot(fpr, tpr, label=f'{name} (AUC = {auc:.2f})', 
+        ax_roc.plot(fpr, tpr, label=f'{name} (AUC = {auc:.2f})', 
                      color=colors_roc[i % len(colors_roc)], linewidth=2)
         
-    axes[1].plot([0, 1], [0, 1], 'k--', alpha=0.5)
-    axes[1].set_title('ROC Curves (Test Set)')
-    axes[1].set_xlabel("False Positive Rate")
-    axes[1].set_ylabel("True Positive Rate")
-    axes[1].legend(loc='lower right')
+    ax_roc.plot([0, 1], [0, 1], 'k--', alpha=0.5)
+    ax_roc.set_title('ROC Curves (Test Set)')
+    ax_roc.set_xlabel("False Positive Rate")
+    ax_roc.set_ylabel("True Positive Rate")
+    ax_roc.legend(loc='lower right')
     
+    # 3. Confusion Matrices
+    # Create custom colormap if palette is provided
+    if palette:
+        # Use the deep red from the palette (index 0) and white
+        cmap = LinearSegmentedColormap.from_list("custom_reds", ["#FFFFFF", palette[0]], N=256)
+    else:
+        cmap = 'Reds'
+
+    model_names = list(confusion_matrices.keys())
+    for i, name in enumerate(model_names):
+        if i < 2:
+            ax_cm = fig.add_subplot(gs[1, i])
+            cm = confusion_matrices[name]
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['Survived', 'Died'])
+            disp.plot(ax=ax_cm, cmap=cmap, colorbar=False)
+            ax_cm.set_title(f'Confusion Matrix: {name}')
+            ax_cm.grid(False)
+            
     plt.tight_layout()
     plt.show()
 
@@ -1016,9 +1522,9 @@ def analyze_variable_associations(df, target_col='DEATH_EVENT', numeric_cols=Non
         plot_variable_associations(df, res, target_col, palette)
     return res
 
-def compare_models_performance(df, target_col='DEATH_EVENT', test_size=0.2, random_state=42, plot=True, palette=None):
+def compare_models_performance(df, target_col='DEATH_EVENT', test_size=0.2, random_state=42, plot=True, palette=None, xgb_params=None, tune_xgb=False):
     """Wrapper for backward compatibility."""
-    res = train_eval_models(df, target_col, test_size, random_state)
+    res = train_eval_models(df, target_col, test_size, random_state, xgb_params, tune_xgb)
     if plot:
         plot_model_performance(res, palette)
     return res
