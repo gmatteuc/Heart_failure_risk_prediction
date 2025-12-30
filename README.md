@@ -1,5 +1,7 @@
 # Heart Failure Risk Prediction
 
+<img src="misc/dataset-cover.png" width="800">
+
 ## Project Overview
 This project analyzes clinical records of heart failure patients to identify key risk factors for mortality and predict survival outcomes. Beyond building models, the aim is to demonstrate how data-driven tools can help clinicians identify high-risk patients earlier, support prioritization of care, and ultimately improve patient management.
 
@@ -58,6 +60,8 @@ These models are designed with a risk stratification perspective in mind: helpin
 - **Top Risk Factors**: `age`, `ejection_fraction` (low levels), `serum_creatinine`, `serum_sodium` (low levels), are highly associated with mortality risk.
 - **Model Performance**: Logistic Regression and XGBoost both achieve strong predictive performance, with XGBoost capturing more complex interactions.
 
+![Model performance](misc/model_performance_example.png)
+
 In practice, this demonstrates that routinely collected hospital data can be transformed into clinically meaningful decision support to identify high-risk patients earlier and support prioritization of care.
 
 ## 💻 Project Structure
@@ -67,7 +71,9 @@ In practice, this demonstrates that routinely collected hospital data can be tra
 ├── misc/                                   # Miscellaneous assets (images, etc.)
 ├── output/                                 # Generated plots and figures
 ├── heart_failure_challenge.ipynb           # Main analysis notebook
-├── heart_failure_utils.py                  # Custom utility functions for plotting & analysis
+├── heart_failure_utils.py                  # Main utility module (facade)
+├── hf_analysis.py                          # Computation and modeling functions
+├── hf_visualization.py                     # Plotting and visualization functions
 ├── environment.yml                         # Conda environment configuration
 └── README.md                               # Project documentation
 ```
