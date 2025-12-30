@@ -1,18 +1,20 @@
 # Heart Failure Risk Prediction
 
 ## Project Overview
-This project focuses on analyzing clinical records of heart failure patients to identify key risk factors for mortality and predict survival outcomes. As a biomedical data science portfolio project, it demonstrates a complete workflow from Exploratory Data Analysis (EDA) and statistical testing to Machine Learning modeling and Survival Analysis.
+This project analyzes clinical records of heart failure patients to identify key risk factors for mortality and predict survival outcomes. Beyond building models, the aim is to demonstrate how data-driven tools can help clinicians identify high-risk patients earlier, support prioritization of care, and ultimately improve patient management.
+
+As a biomedical data science portfolio project, it showcases a complete workflow from Exploratory Data Analysis (EDA) and statistical testing to Machine Learning modeling and Survival Analysis, designed with realistic clinical decision support use cases in mind.
 
 The goal is to answer two main questions:
 1. **What are the most significant risk factors associated with heart failure mortality?**
-2. **Can we accurately predict patient survival using clinical features?**
+2. **Can we use routinely collected clinical features to accurately predict patient survival and stratify patients into meaningful risk groups?**
 
 Created by Giulio Matteucci in 2025 as a biomedical data science portfolio project.
 
 ## Dataset
 The dataset used is the **Heart Failure Clinical Records Dataset**.
 - **Source**: Kaggle (originally from UCI Machine Learning Repository).
-- **Size**: The provided file contains 5000 records. However, EDA reveals significant duplication that is adressed by deduplication.
+- **Size**: The provided file contains 5000 records; however, EDA reveals significant duplication that is addressed by deduplication.
 - **Target Variable**: `DEATH_EVENT` (0 = Survived, 1 = Deceased)
 - **Key Features**:
   - `age`: Age of the patient
@@ -26,34 +28,37 @@ The dataset used is the **Heart Failure Clinical Records Dataset**.
 
 ### 1. Exploratory Data Analysis (EDA) & Statistical Testing
 - **Data Cleaning**: Identification and removal of duplicate records.
-- **Distribution Analysis**: Visualized distributions of clinical variables.
+- **Distribution Analysis**: Visualization of clinical variable distributions.
 - **Statistical Significance**:
-  - **Mann-Whitney U Test**: Used for numeric variables to compare distributions between surviving and deceased patients.
-  - **Chi-Square Test**: Used for categorical variables to assess associations with mortality.
-- **Correlation Analysis**: Examined relationships between features.
+  - **Mann-Whitney U Test** for numeric variables.
+  - **Chi-Square Test** for categorical variables.
+- **Correlation Analysis** to examine relationships between features.
 
 ### 2. Machine Learning Modeling
 Two models were trained and evaluated to predict `DEATH_EVENT`:
-- **Logistic Regression**: Serves as an interpretable baseline model.
-- **XGBoost Classifier**: A powerful gradient boosting model to capture non-linear relationships.
+- **Logistic Regression**: Interpretable baseline model.
+- **XGBoost Classifier**: Gradient boosting model capturing non-linear relationships.
 
 **Evaluation Metrics**:
 - Accuracy, Recall, F1-Score
 - ROC-AUC (Receiver Operating Characteristic - Area Under Curve)
-- Stratified K-Fold Cross-Validation for robust performance estimation.
+- Stratified K-Fold Cross-Validation for robust estimation.
+
+These models are designed with a risk stratification perspective in mind: helping flag high-risk patients who may benefit from closer follow-up.
 
 ### 3. Feature Importance & Interpretability
-- Analyzed **Logistic Regression Coefficients** to understand the direction and magnitude of effects.
-- Analyzed **XGBoost Feature Importance** to identify the most predictive variables.
+- **Logistic Regression Coefficients** clarify direction and magnitude of effects.
+- **XGBoost Feature Importance** highlights the most predictive clinical variables.
 
 ### 4. Survival Analysis
-- **Custom Kaplan-Meier Implementation**: Developed a high-performance, vectorized numpy implementation of the Kaplan-Meier estimator to visualize survival probabilities over time.
-- **Stratified Analysis**: Compared survival curves across different risk groups (e.g., Age groups, Ejection Fraction levels) with bootstrap confidence intervals.
+- **Custom Kaplan-Meier Implementation**: High-performance, vectorized NumPy implementation to estimate survival probability over time.
+- **Stratified Analysis**: Survival curves compared across risk groups (e.g., age ranges, ejection fraction levels) with bootstrap confidence intervals.
 
 ## Key Findings
-- **Top Risk Factors**: The analysis highlights `age`, `ejection_fraction`, `serum_creatinine`, and `time` as the most significant predictors of mortality.
-- **Model Performance**: Both Logistic Regression and XGBoost provide competitive predictive performance, with XGBoost often capturing more complex interactions.
-- **Survival Insights**: Patients with lower ejection fraction and higher serum creatinine levels show markedly lower survival probabilities over time.
+- **Top Risk Factors**: `age`, `ejection_fraction` (low levels), `serum_creatinine`, `serum_sodium` (low levels), are highly associated with mortality risk.
+- **Model Performance**: Logistic Regression and XGBoost both achieve strong predictive performance, with XGBoost capturing more complex interactions.
+
+In practice, this demonstrates that routinely collected hospital data can be transformed into clinically meaningful decision support to identify high-risk patients earlier and support prioritization of care.
 
 ## 💻 Project Structure
 ```
@@ -95,3 +100,4 @@ Two models were trained and evaluated to predict `DEATH_EVENT`:
 - scipy
 - scikit-learn
 - xgboost
+- lifelines
